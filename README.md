@@ -1,4 +1,4 @@
-#🛡️ Discord Age Verification System By Fnaf_Rainbow And CreatorPlaza
+# 🛡️ Discord Age Verification System By Fnaf_Rainbow And CreatorPlaza
 A secure, privacy-first age verification solution combining a Discord Bot and a Web Portal. This system allows server administrators to verify user ages via manual ID review without permanently storing sensitive government documents.
 
 ✨ Features
