@@ -1,7 +1,7 @@
 # 🛡️ Discord Age Verification System By Fnaf_Rainbow And CreatorPlaza
 A secure, privacy-first age verification solution combining a Discord Bot and a Web Portal. This system allows server administrators to verify user ages via manual ID review without permanently storing sensitive government documents.
 
-✨ Features
+# ✨ Features
 Slash Command Integration: Users initiate verification easily with /verify.
 
 Secure Web Portal: A modern, dark-themed UI for ID uploads, styled after the Discord aesthetic.
@@ -14,7 +14,7 @@ Uses unique, non-guessable tokens for every verification session.
 
 Automated Role Management: Automatically grants the "Verified" role upon approval and notifies the user via DM.
 
-🏗️ Technical Stack
+# 🏗️ Technical Stack
 Runtime: Node.js (v18+)
 
 Bot Framework: discord.js
@@ -25,7 +25,7 @@ File Handling: Multer
 
 Security: Express-session & Dotenv
 
-🚀 Getting Started
+# 🚀 Getting Started
 1. Prerequisites
 A Discord Bot Token (Discord Developer Portal)
 
@@ -67,7 +67,8 @@ node index.js
 # Recommended: Start with PM2 for 24/7 uptime
 npm install pm2 -g
 pm2 start index.js --name "age-bot"
-🔒 Security & Liability
+
+# 🔒 Security & Liability
 SSL/HTTPS Requirement
 Warning: Handling government IDs over unencrypted http is a massive security risk. In a production environment, you must use an SSL certificate (e.g., Let's Encrypt) and run this behind a reverse proxy like Nginx.
 
@@ -77,8 +78,8 @@ The bot's role in your Discord server must be positioned higher than the "Verifi
 Data Handling
 This bot is designed to be a "pass-through" system. We recommend updating your server's Privacy Policy to reflect that IDs are reviewed by humans and deleted immediately after the check is complete.
 
-🤝 Contributing
+# 🤝 Contributing
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-📄 License
+# 📄 License
 This project is licensed under the MIT License.
