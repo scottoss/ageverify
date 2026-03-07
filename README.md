@@ -35,20 +35,26 @@ Node.js installed on your machine.
 
 2. Installation
 Bash
-# Clone the repository
+# Clone the repository 
+```bash
 git clone https://github.com/scottoss/ageverify
+```
 
 # Enter the directory
+```bash
 cd ageverify
+```
 
 # Install dependencies
+```bash
 npm install
+```
 Note: This project uses uuid@9.0.1 specifically to maintain CommonJS compatibility.
 
 3. Configuration
 Create a .env file in the root directory and fill in the following:
 
-Codefragment
+```bash
 DISCORD_TOKEN=your_bot_token
 CLIENT_ID=your_application_id
 GUILD_ID=your_server_id
@@ -59,14 +65,18 @@ PORT=3000
 BASE_URL=http://localhost:3000
 ADMIN_PASSWORD=your_dashboard_password
 SESSION_SECRET=a_long_random_string_for_security
+```
 4. Running the Application
-Bash
+```bash
 # Start with Node
 node index.js
+```
 
 # Recommended: Start with PM2 for 24/7 uptime
+```bash
 npm install pm2 -g
 pm2 start index.js --name "age-bot"
+```
 
 # 🔒 Security & Liability
 SSL/HTTPS Requirement
