@@ -34,7 +34,7 @@ Node.js installed on your machine.
 "Developer Mode" enabled in Discord to copy IDs.
 
 2. Installation
-Bash
+
 # Clone the repository 
 ```bash
 git clone https://github.com/scottoss/ageverify
