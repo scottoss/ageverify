@@ -1,190 +1,222 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const express = require('express');
 const session = require('express-session');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-
-// Fixed UUID import for CommonJS
+const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 
-// --- INITIALIZATION ---
+// --- DATABASE & FILE SETUP ---
+const uploadDir = path.join(__dirname, 'uploads');
+const statsFile = path.join(__dirname, 'stats.json');
+const settingsFile = path.join(__dirname, 'guildSettings.json');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
 const app = express();
 const upload = multer({ dest: 'uploads/' });
 const pendingVerifications = new Map();
-const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
+const client = new Client({ 
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.DirectMessages] 
+});
 
-// --- CSS STYLING ---
-const CSS = `
-<style>
-    :root { --discord-blurple: #5865F2; --dark-bg: #23272A; --card-bg: #2C2F33; --text: #ffffff; }
-    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: var(--dark-bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-    .card { background: var(--card-bg); padding: 40px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); width: 100%; max-width: 400px; text-align: center; }
-    .logo { width: 80px; height: 80px; margin-bottom: 20px; border-radius: 50%; border: 3px solid var(--discord-blurple); }
-    h2 { margin-bottom: 10px; color: var(--discord-blurple); }
-    p { color: #B9BBBE; font-size: 14px; line-height: 1.5; }
-    input[type="file"] { margin: 20px 0; color: #B9BBBE; width: 100%; }
-    button { background: var(--discord-blurple); color: white; border: none; padding: 12px 24px; border-radius: 5px; font-weight: bold; cursor: pointer; transition: 0.2s; width: 100%; font-size: 16px; }
-    button:hover { background: #4752C4; transform: translateY(-1px); }
-    .footer-note { font-size: 11px; margin-top: 20px; color: #72767D; border-top: 1px solid #40444B; padding-top: 15px; }
-    .id-preview { width: 100%; border-radius: 8px; border: 2px solid #40444B; margin: 15px 0; }
-    .btn-deny { background: #ED4245; margin-top: 10px; }
-    .btn-deny:hover { background: #C03537; }
-</style>
-`;
+// --- MODERN CSS ---
+const CSS = `<style>
+    :root { --blurple: #5865F2; --bg-dark: #36393f; --bg-card: #2f3136; --text: #ffffff; --muted: #b9bbbe; --danger: #ed4245; --success: #3ba55c; }
+    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background: var(--bg-dark); color: var(--text); margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }
+    .container { width: 100%; max-width: 800px; }
+    .card { background: var(--bg-card); padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); text-align: center; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.05); }
+    .btn { background: var(--blurple); color: white; border: none; padding: 12px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; transition: 0.2s; }
+    .btn:hover { background: #4752C4; }
+    .btn-danger { background: var(--danger); }
+    .nav { margin-bottom: 20px; display: flex; gap: 15px; justify-content: center; }
+    .nav a { color: var(--muted); text-decoration: none; font-weight: bold; }
+    .nav a.active { color: var(--text); border-bottom: 2px solid var(--blurple); }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; background: #202225; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 15px; text-align: left; border-bottom: 1px solid #40444B; }
+    .badge { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
+    .badge-success { background: var(--success); }
+    .badge-danger { background: var(--danger); }
+    .preview-img { width: 100%; border-radius: 4px; margin: 15px 0; border: 2px solid #000; }
+    .tos-box { background: #202225; padding: 15px; border-radius: 6px; text-align: left; font-size: 13px; margin-bottom: 15px; border-left: 4px solid var(--blurple); }
+</style>`;
 
-// --- MIDDLEWARE ---
+// --- DATABASE HELPERS ---
+function getGuildSettings(guildId) {
+    if (!fs.existsSync(settingsFile)) return {};
+    return JSON.parse(fs.readFileSync(settingsFile))[guildId] || {};
+}
+function saveGuildSetting(guildId, roleId) {
+    let s = fs.existsSync(settingsFile) ? JSON.parse(fs.readFileSync(settingsFile)) : {};
+    s[guildId] = { roleId };
+    fs.writeFileSync(settingsFile, JSON.stringify(s, null, 2));
+}
+function recordStat(adminId, action) {
+    let s = fs.existsSync(statsFile) ? JSON.parse(fs.readFileSync(statsFile)) : {};
+    if (!s[adminId]) s[adminId] = { approvals: 0, denials: 0 };
+    action === 'approve' ? s[adminId].approvals++ : s[adminId].denials++;
+    fs.writeFileSync(statsFile, JSON.stringify(s, null, 2));
+}
+
 app.use(express.urlencoded({ extended: true }));
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'dev-secret-key',
-    resave: false,
-    saveUninitialized: false,
-    cookie: { secure: false } // Set to true if using HTTPS
+    secret: process.env.SESSION_SECRET,
+    resave: false, saveUninitialized: false,
+    cookie: { secure: false } 
 }));
 
-const isAdmin = (req, res, next) => {
-    if (req.session.authenticated) return next();
-    res.redirect('/login');
-};
+// --- OAUTH2 & PUBLIC ROUTES ---
 
-// --- DISCORD BOT LOGIC ---
-client.on('ready', async () => {
-    console.log(`✅ Bot logged in as ${client.user.tag}`);
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-    const commands = [
-        new SlashCommandBuilder().setName('verify').setDescription('Starts age verification process.')
-    ].map(c => c.toJSON());
-    
-    await rest.put(Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID), { body: commands });
+app.get('/', (req, res) => {
+    res.send(`${CSS}<div class="container"><div class="card"><h1>🛡️ Verification Hub</h1><p>Secure Staff Management Portal</p><br><a href="/auth/discord" class="btn">Login with Discord</a></div></div>`);
 });
 
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
-    if (interaction.commandName === 'verify') {
-        const token = uuidv4();
-        pendingVerifications.set(token, { 
-            userId: interaction.user.id, 
-            status: 'awaiting_upload', 
-            timestamp: Date.now() 
+app.get('/auth/discord', (req, res) => {
+    const url = `https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}&response_type=code&scope=identify%20guilds.members.read`;
+    res.redirect(url);
+});
+
+app.get('/auth/callback', async (req, res) => {
+    const code = req.query.code;
+    if (!code) return res.redirect('/');
+    try {
+        const tokenResp = await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({
+            client_id: process.env.CLIENT_ID, client_secret: process.env.CLIENT_SECRET,
+            code, grant_type: 'authorization_code', redirect_uri: process.env.REDIRECT_URI
+        }), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+
+        const userResp = await axios.get('https://discord.com/api/users/@me', {
+            headers: { Authorization: `Bearer ${tokenResp.data.access_token}` }
         });
-        await interaction.reply({ 
-            content: `Please upload your ID here: ${process.env.BASE_URL}/verify/${token}`, 
-            ephemeral: true 
-        });
-    }
+
+        const staffGuild = await client.guilds.fetch(process.env.STAFF_GUILD_ID);
+        const member = await staffGuild.members.fetch(userResp.data.id);
+
+        if (member.roles.cache.has(process.env.STAFF_ROLE_ID)) {
+            req.session.authenticated = true;
+            req.session.adminUser = userResp.data.id;
+            return res.redirect('/admin-review');
+        }
+        res.send("Access Denied: Required Staff Role missing.");
+    } catch (e) { res.send("Auth Failed: " + e.message); }
 });
 
-// --- WEB ROUTES ---
+// --- USER UPLOAD ROUTES ---
 
-// Login Page
-app.get('/login', (req, res) => {
-    res.send(`${CSS}<div class="card"><h2>Staff Portal</h2><form method="POST"><input type="password" name="pw" placeholder="Admin Password" style="width:100%; padding:10px; margin-bottom:15px; border-radius:5px; border:none;"><button>Login</button></form></div>`);
-});
-
-app.post('/login', (req, res) => {
-    if (req.body.pw === process.env.ADMIN_PASSWORD) {
-        req.session.authenticated = true;
-        return res.redirect('/admin-review');
-    }
-    res.send('Wrong password. <a href="/login">Try again</a>');
-});
-
-// User Upload Page
 app.get('/verify/:token', (req, res) => {
-    if (!pendingVerifications.has(req.params.token)) return res.status(404).send('Invalid or expired link.');
-    res.send(`
-        ${CSS}
-        <div class="card">
-            <img src="https://cdn-icons-png.flaticon.com/512/1077/1077114.png" class="logo">
-            <h2>Identity Verification</h2>
-            <p>Upload a clear photo of your ID. Ensure your <strong>Date of Birth</strong> is visible. Our staff will review it shortly.</p>
-            <form action="/upload" method="POST" enctype="multipart/form-data">
-                <input type="hidden" name="token" value="${req.params.token}">
-                <input type="file" name="idImage" accept="image/*" required>
-                <button type="submit">Submit for Review</button>
-            </form>
-            <div class="footer-note">🛡️ Photos are deleted permanently after review.</div>
-        </div>
-    `);
+    const data = pendingVerifications.get(req.params.token);
+    if (!data) return res.send(`${CSS}<div class="container"><div class="card"><h2>Link Expired</h2><p>Please run /verify again.</p></div></div>`);
+    res.send(`${CSS}<div class="container"><div class="card"><h2>ID Verification</h2><p>Please upload a clear photo of your ID.</p><form action="/upload" method="POST" enctype="multipart/form-data"><input type="hidden" name="token" value="${req.params.token}"><input type="file" name="idImage" accept="image/*" required><div class="tos-box"><strong>🔒 Privacy Notice</strong><br>Your ID is deleted immediately after review. Only staff see this submission.</div><div style="margin-bottom:15px;"><input type="checkbox" id="tos" required> <label for="tos">I agree to the Terms of Service.</label></div><button class="btn" style="width:100%">Submit for Review</button></form></div></div>`);
 });
 
 app.post('/upload', upload.single('idImage'), async (req, res) => {
     const data = pendingVerifications.get(req.body.token);
-    if (!data || !req.file) return res.status(400).send('Upload failed.');
-
+    if (!data || !req.file) return res.status(400).send("Upload Failed.");
     data.filename = req.file.filename;
     data.status = 'pending_review';
 
     try {
-        const channel = await client.channels.fetch(process.env.ADMIN_CHANNEL_ID);
-        channel.send({ embeds: [new EmbedBuilder().setTitle('🔔 New ID Uploaded').setDescription(`User <@${data.userId}> has submitted an ID for review.`).setColor('Orange')] });
-    } catch (e) { console.error("Could not send admin notification."); }
-    
-    res.send(`${CSS}<div class="card"><h2>Success!</h2><p>Your ID has been submitted. You will receive a DM from the bot once it has been reviewed.</p></div>`);
+        const log = await client.channels.fetch(process.env.STAFF_LOG_CHANNEL_ID);
+        await log.send({ embeds: [new EmbedBuilder().setTitle('📸 ID Uploaded').setColor(0x5865F2).setDescription(`User <@${data.userId}> has submitted an ID for review.`).setTimestamp()] });
+    } catch(e) {}
+    res.send(`${CSS}<div class="container"><div class="card"><h2>Success!</h2><p>Your ID has been submitted. Staff will review it shortly.</p></div></div>`);
 });
 
-// Admin Dashboard
-app.use('/view-id', isAdmin, express.static(uploadDir));
+// --- ADMIN DASHBOARD ---
 
-app.get('/admin-review', isAdmin, (req, res) => {
-    let reviews = '';
+app.get('/admin-review', (req, res) => {
+    if (!req.session.authenticated) return res.redirect('/');
+    let cards = '';
     pendingVerifications.forEach((val, key) => {
         if (val.status === 'pending_review') {
-            reviews += `
-                <div class="card" style="margin-bottom:20px; max-width: 500px;">
-                    <p><strong>Discord User ID:</strong> ${val.userId}</p>
-                    <img src="/view-id/${val.filename}" class="id-preview">
-                    <form action="/decide" method="POST">
-                        <input type="hidden" name="token" value="${key}">
-                        <button name="choice" value="approve">APPROVE & DELETE</button>
-                        <button name="choice" value="deny" class="btn-deny">DENY & DELETE</button>
-                    </form>
-                </div>`;
+            const guild = client.guilds.cache.get(val.guildId);
+            cards += `<div class="card" style="text-align:left;"><h3>${guild?.name || 'Server'}</h3><p>User: <@${val.userId}></p><img src="/view-id/${val.filename}" class="preview-img"><form action="/decide" method="POST" style="display:flex; gap:10px;"><input type="hidden" name="token" value="${key}"><button name="choice" value="approve" class="btn" style="flex:1">Approve</button><button name="choice" value="deny" class="btn btn-danger" style="flex:1">Deny</button></form></div>`;
         }
     });
-
-    res.send(`${CSS}<div style="padding: 40px; width: 100%;"><h1 style="text-align:center;">Pending Reviews</h1><div style="display:flex; flex-direction:column; align-items:center;">${reviews || '<p>No IDs currently waiting.</p>'}</div></div>`);
+    res.send(`${CSS}<div class="container"><div class="nav"><a href="/admin-review" class="active">Queue</a><a href="/admin-servers">Servers</a><a href="/admin-stats">Stats</a><a href="/logout">Logout</a></div>${cards || '<div class="card"><h3>Queue Clear</h3></div>'}</div>`);
 });
 
-app.post('/decide', isAdmin, async (req, res) => {
+app.use('/view-id', (req, res, next) => {
+    if (!req.session.authenticated) return res.status(403).send("Forbidden");
+    next();
+}, express.static(uploadDir));
+
+app.post('/decide', async (req, res) => {
+    if (!req.session.authenticated) return res.redirect('/');
     const { token, choice } = req.body;
     const data = pendingVerifications.get(token);
     if (!data) return res.redirect('/admin-review');
 
     try {
-        const guild = await client.guilds.fetch(process.env.GUILD_ID);
+        const guild = await client.guilds.fetch(data.guildId);
         const member = await guild.members.fetch(data.userId);
-        if (choice === 'approve') {
-            await member.roles.add(process.env.VERIFIED_ROLE_ID);
-            await member.send("✅ Your age verification has been approved! You now have access.");
-        } else {
-            await member.send("❌ Your age verification was denied. Please try again with a clearer photo.");
-        }
-    } catch (e) { console.log("User may have left the server."); }
+        const settings = getGuildSettings(data.guildId);
+        const role = settings.roleId ? await guild.roles.fetch(settings.roleId) : guild.roles.cache.find(r => r.name.toLowerCase() === "verified");
 
-    if (fs.existsSync(path.join(uploadDir, data.filename))) fs.unlinkSync(path.join(uploadDir, data.filename));
+        if (choice === 'approve' && role) {
+            await member.roles.add(role);
+            await member.send(`✅ Verification approved in **${guild.name}**!`);
+        } else {
+            await member.send(`❌ Verification denied in **${guild.name}**.`);
+        }
+        recordStat(req.session.adminUser, choice);
+    } catch (e) { console.error(e); }
+
+    if (data.filename) fs.unlinkSync(path.join(uploadDir, data.filename));
     pendingVerifications.delete(token);
     res.redirect('/admin-review');
 });
 
-app.get('/logout', (req, res) => { req.session.destroy(); res.redirect('/login'); });
-
-// --- AUTO-CLEANUP (Every Hour) ---
-setInterval(() => {
-    const now = Date.now();
-    pendingVerifications.forEach((data, token) => {
-        if (now - data.timestamp > 24 * 60 * 60 * 1000) { 
-            if (data.filename && fs.existsSync(path.join(uploadDir, data.filename))) {
-                fs.unlinkSync(path.join(uploadDir, data.filename));
-            }
-            pendingVerifications.delete(token);
-        }
+app.get('/admin-servers', (req, res) => {
+    if (!req.session.authenticated) return res.redirect('/');
+    let rows = '';
+    client.guilds.cache.forEach(g => {
+        const s = getGuildSettings(g.id);
+        const role = s.roleId ? `<span class="badge badge-success">Custom</span>` : (g.roles.cache.find(r => r.name.toLowerCase() === "verified") ? `<span class="badge" style="background:#4f545c">Default</span>` : `<span class="badge badge-danger">Missing</span>`);
+        rows += `<tr><td>${g.name}</td><td>${role}</td><td>${g.memberCount}</td></tr>`;
     });
-}, 3600000);
+    res.send(`${CSS}<div class="container"><div class="nav"><a href="/admin-review">Queue</a><a href="/admin-servers" class="active">Servers</a><a href="/admin-stats">Stats</a><a href="/logout">Logout</a></div><div class="card"><table><thead><tr><th>Server</th><th>Role Status</th><th>Members</th></tr></thead><tbody>${rows}</tbody></table></div></div>`);
+});
 
-app.listen(process.env.PORT || 3000, () => console.log(`🌍 Server live at ${process.env.BASE_URL}`));
+app.get('/admin-stats', (req, res) => {
+    if (!req.session.authenticated) return res.redirect('/');
+    const stats = fs.existsSync(statsFile) ? JSON.parse(fs.readFileSync(statsFile)) : {};
+    let rows = '';
+    Object.entries(stats).forEach(([id, s]) => { rows += `<tr><td><@${id}></td><td>${s.approvals}</td><td>${s.denials}</td></tr>`; });
+    res.send(`${CSS}<div class="container"><div class="nav"><a href="/admin-review">Queue</a><a href="/admin-servers">Servers</a><a href="/admin-stats" class="active">Stats</a><a href="/logout">Logout</a></div><div class="card"><table><tr><th>Staff</th><th>✅ OK</th><th>❌ NO</th></tr>${rows}</table></div></div>`);
+});
+
+app.get('/logout', (req, res) => { req.session.destroy(); res.redirect('/'); });
+
+// --- DISCORD COMMANDS ---
+client.on('ready', async () => {
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+    const commands = [
+        new SlashCommandBuilder().setName('verify').setDescription('Start your verification.'),
+        new SlashCommandBuilder().setName('setrole').setDescription('Set target role.').addRoleOption(o => o.setName('role').setDescription('Role').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+    ].map(c => c.toJSON());
+    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
+});
+
+client.on('interactionCreate', async (i) => {
+    if (!i.isChatInputCommand()) return;
+    if (i.commandName === 'setrole') {
+        saveGuildSetting(i.guildId, i.options.getRole('role').id);
+        return i.reply({ content: '✅ Role updated!', ephemeral: true });
+    }
+    if (i.commandName === 'verify') {
+        const token = uuidv4();
+        pendingVerifications.set(token, { userId: i.user.id, guildId: i.guildId, status: 'awaiting_upload', timestamp: Date.now() });
+        await i.reply({ content: 'Check DMs!', ephemeral: true });
+        try { 
+            await i.user.send(`🛡️ Verify for **${i.guild.name}**: ${process.env.BASE_URL}/verify/${token}`); 
+            const log = await client.channels.fetch(process.env.STAFF_LOG_CHANNEL_ID);
+            await log.send({ embeds: [new EmbedBuilder().setTitle('📥 Verification Started').setDescription(`User <@${i.user.id}> started verification.`).setTimestamp()] });
+        } catch (e) { await i.followUp({ content: 'Open DMs!', ephemeral: true }); }
+    }
+});
+
+app.listen(process.env.PORT, () => console.log(`Portal online at ${process.env.BASE_URL}`));
 client.login(process.env.DISCORD_TOKEN);
