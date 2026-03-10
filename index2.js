@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, PermissionFlagsBits, Partials } = require('discord.js');
 const express = require('express');
 const session = require('express-session');
 const multer = require('multer');
@@ -14,58 +14,80 @@ const statsFile = path.join(__dirname, 'stats.json');
 const settingsFile = path.join(__dirname, 'guildSettings.json');
 const verifiedUsersFile = path.join(__dirname, 'verifiedUsers.json');
 const blacklistFile = path.join(__dirname, 'blacklist.json');
-const appealsFile = path.join(__dirname, 'appeals.json');
 
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 const app = express();
 const upload = multer({ dest: 'uploads/' });
-const pendingVerifications = new Map();
+const pendingVerifications = new Map(); 
 
 const client = new Client({ 
     intents: [
         GatewayIntentBits.Guilds, 
         GatewayIntentBits.GuildMembers, 
         GatewayIntentBits.DirectMessages
-    ] 
+    ],
+    partials: [Partials.Channel, Partials.User, Partials.GuildMember]
 });
 
-// --- MODERN UI ENGINE ---
+// --- MODERN FANTASY UI ENGINE ---
 const CSS = `<style>
-    :root { --blurple: #5865F2; --bg-dark: #36393f; --bg-card: #2f3136; --text: #ffffff; --muted: #b9bbbe; --danger: #ed4245; --success: #3ba55c; --warning: #faa61a; }
-    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background: var(--bg-dark); color: var(--text); margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }
-    .container { width: 100%; max-width: 1100px; }
-    .card { background: var(--bg-card); padding: 25px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); text-align: center; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.05); }
-    .btn { background: var(--blurple); color: white; border: none; padding: 10px 18px; border-radius: 4px; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; transition: 0.2s; }
-    .btn:hover { opacity: 0.8; }
-    .btn-danger { background: var(--danger); }
-    .btn-success { background: var(--success); }
-    .nav { margin-bottom: 30px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; background: #2f3136; padding: 15px; border-radius: 8px; }
-    .nav a { color: var(--muted); text-decoration: none; font-weight: bold; padding: 8px 15px; border-radius: 4px; transition: 0.3s; }
-    .nav a:hover { background: rgba(255,255,255,0.05); color: #fff; }
-    .nav a.active { background: var(--blurple); color: #text; }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; background: #202225; border-radius: 8px; overflow: hidden; }
-    th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #40444B; }
-    .preview-img { width: 100%; max-height: 450px; object-fit: contain; border-radius: 4px; margin: 15px 0; border: 2px solid #000; }
-    code { background: #000; padding: 2px 5px; border-radius: 3px; font-family: monospace; color: var(--warning); }
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Inter:wght@300;400;600&display=swap');
+    :root { 
+        --obsidian-bg: #0f1115; --parchment-text: #e2e8f0; --arcane-glow: #8b5cf6; 
+        --elven-gold: #fbbf24; --void-surface: rgba(30, 32, 40, 0.7); 
+        --danger: #ef4444; --success: #10b981; --font-heading: 'Cinzel', serif; 
+        --font-body: 'Inter', sans-serif;
+    }
+    body { font-family: var(--font-body); background-color: var(--obsidian-bg); color: var(--parchment-text); margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }
+    .container { width: 100%; max-width: 1000px; }
+    .card { background: var(--void-surface); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 12px; padding: 25px; margin-bottom: 20px; backdrop-filter: blur(10px); box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+    .btn { background: linear-gradient(135deg, #6d28d9 0%, #4c1d95 100%); color: white; padding: 10px 20px; border-radius: 6px; cursor: pointer; text-decoration: none; font-family: var(--font-heading); border:none; transition: 0.3s; }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 0 15px var(--arcane-glow); }
+    .btn-danger { background: #991b1b; } .btn-success { background: #065f46; }
+    .nav { margin-bottom: 30px; display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; }
+    .nav a { color: var(--parchment-text); text-decoration: none; font-family: var(--font-heading); padding: 5px 10px; font-size: 0.9rem; }
+    .nav a.active { color: var(--elven-gold); border-bottom: 2px solid var(--elven-gold); }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    th, td { padding: 12px; border-bottom: 1px solid rgba(139, 92, 246, 0.2); text-align: left; }
+    th { color: var(--elven-gold); font-family: var(--font-heading); }
+    code { background: #000; color: var(--elven-gold); padding: 2px 5px; border-radius: 4px; }
+    input[type="text"], .search-input { background: rgba(0,0,0,0.5); border: 1px solid var(--arcane-glow); color: white; padding: 10px; border-radius: 4px; width: 100%; box-sizing: border-box; margin-bottom: 10px; }
 </style>`;
 
 const NAV = (active) => `<div class="nav">
-    <a href="/admin-review" class="${active==='queue'?'active':''}">Queue</a>
-    <a href="/admin-users" class="${active==='users'?'active':''}">Users</a>
-    <a href="/admin-servers" class="${active==='servers'?'active':''}">Servers</a>
-    <a href="/admin-appeals" class="${active==='appeals'?'active':''}">Appeals</a>
-    <a href="/admin-stats" class="${active==='stats'?'active':''}">Staff Stats</a>
-    <a href="/logout">Logout</a>
+    <a href="/admin-review" class="${active==='queue'?'active':''}">Review Queue</a>
+    <a href="/admin-users" class="${active==='users'?'active':''}">Entities</a>
+    <a href="/admin-servers" class="${active==='servers'?'active':''}">Realms</a>
+    <a href="/admin-stats" class="${active==='stats'?'active':''}">Council Stats</a>
+    <a href="/logout">Depart</a>
 </div>`;
 
-// --- DATABASE HELPERS ---
+// --- DATA HELPERS ---
 const getJSON = (file, def = []) => fs.existsSync(file) ? JSON.parse(fs.readFileSync(file)) : def;
 const saveJSON = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2));
 
-function getGuildSettings(guildId) { return getJSON(settingsFile, {})[guildId] || {}; }
-function isGloballyVerified(userId) { return getJSON(verifiedUsersFile).includes(userId); }
-function isBlacklisted(userId) { return getJSON(blacklistFile).includes(userId); }
+[statsFile, settingsFile, verifiedUsersFile, blacklistFile].forEach(f => { 
+    if (!fs.existsSync(f)) saveJSON(f, f.endsWith('s.json') ? {} : []); 
+});
+
+const isGloballyVerified = (id) => getJSON(verifiedUsersFile).includes(id);
+const isBlacklisted = (id) => getJSON(blacklistFile).includes(id);
+
+// --- GLOBAL ROLE REMOVER ---
+async function revokeGlobalRoles(userId) {
+    const settings = getJSON(settingsFile, {});
+    for (const [guildId, config] of Object.entries(settings)) {
+        try {
+            const guild = await client.guilds.fetch(guildId).catch(() => null);
+            if (!guild) continue;
+            const member = await guild.members.fetch(userId).catch(() => null);
+            if (member && config.roleId) {
+                await member.roles.remove(config.roleId).catch(() => null);
+            }
+        } catch (e) { console.error(`Failed revocation in ${guildId}`); }
+    }
+}
 
 function recordStat(adminId, action) {
     let s = getJSON(statsFile, {});
@@ -74,30 +96,11 @@ function recordStat(adminId, action) {
     saveJSON(statsFile, s);
 }
 
-// --- LOGGING ---
-async function sendAuditLog(adminId, userId, guildName, action) {
-    const channelId = process.env.STAFF_LOG_CHANNEL_ID;
-    if (!channelId) return;
-    try {
-        const logChannel = await client.channels.fetch(channelId);
-        const colors = { approve: 0x3ba55c, deny: 0xed4245, PERMANENT_BAN: 0x2f3136, PARDONED: 0xfaa61a, REVOKE: 0xe67e22, MANUAL_BYPASS: 0x5865F2 };
-        const embed = new EmbedBuilder()
-            .setTitle(`📑 Audit: ${action.replace('_', ' ').toUpperCase()}`)
-            .setColor(colors[action] || 0x5865F2)
-            .addFields(
-                { name: "Staff Member", value: `<@${adminId}>`, inline: true },
-                { name: "Target User", value: `<@${userId}>`, inline: true },
-                { name: "Location", value: guildName, inline: true }
-            ).setTimestamp();
-        await logChannel.send({ embeds: [embed] });
-    } catch (e) { console.error("Log Error:", e.message); }
-}
-
+// --- EXPRESS APP ---
 app.use(express.urlencoded({ extended: true }));
-app.use(session({ secret: process.env.SESSION_SECRET, resave: false, saveUninitialized: false, cookie: { secure: false } }));
+app.use(session({ secret: 'mystic_portal_secret', resave: false, saveUninitialized: false }));
 
-// --- AUTH ---
-app.get('/', (req, res) => res.send(`${CSS}<div class="container"><div class="card"><h1>🛡️ Verification Hub</h1><a href="/auth/discord" class="btn">Login with Discord</a></div></div>`));
+app.get('/', (req, res) => res.send(`${CSS}<div class="container" style="text-align:center;"><div class="card"><h1>🛡️ Portal Entrance</h1><a href="/auth/discord" class="btn">Authenticate via Discord</a></div></div>`));
 
 app.get('/auth/discord', (req, res) => {
     const url = `https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}&response_type=code&scope=identify%20guilds.members.read`;
@@ -105,159 +108,123 @@ app.get('/auth/discord', (req, res) => {
 });
 
 app.get('/auth/callback', async (req, res) => {
-    const code = req.query.code;
-    if (!code) return res.redirect('/');
     try {
         const tokenResp = await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({
             client_id: process.env.CLIENT_ID, client_secret: process.env.CLIENT_SECRET,
-            code, grant_type: 'authorization_code', redirect_uri: process.env.REDIRECT_URI
-        }), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-
+            code: req.query.code, grant_type: 'authorization_code', redirect_uri: process.env.REDIRECT_URI
+        }));
         const userResp = await axios.get('https://discord.com/api/users/@me', { headers: { Authorization: `Bearer ${tokenResp.data.access_token}` } });
         const staffGuild = await client.guilds.fetch(process.env.STAFF_GUILD_ID);
         const member = await staffGuild.members.fetch(userResp.data.id);
-
         if (member.roles.cache.has(process.env.STAFF_ROLE_ID)) {
             req.session.authenticated = true;
-            req.session.adminUser = userResp.data.id;
+            req.session.adminId = userResp.data.id;
             return res.redirect('/admin-review');
         }
         res.send("Access Denied.");
-    } catch (e) { res.send("Auth Error: " + e.message); }
+    } catch (e) { res.send(`Auth Error: ${e.message}`); }
 });
 
 // --- ADMIN PAGES ---
-
-// 1. QUEUE
 app.get('/admin-review', (req, res) => {
     if (!req.session.authenticated) return res.redirect('/');
     let cards = '';
     pendingVerifications.forEach((val, key) => {
         if (val.status === 'pending_review') {
-            const user = client.users.cache.get(val.userId);
-            cards += `<div class="card" style="text-align:left;"><h3>User: ${user?`@${user.tag}`:'Unknown'} <small>(${val.userId})</small></h3><img src="/view-id/${val.filename}" class="preview-img"><form action="/decide" method="POST" style="display:flex; gap:10px;"><input type="hidden" name="token" value="${key}"><button name="choice" value="approve" class="btn">Approve</button><button name="choice" value="deny" class="btn btn-danger">Deny</button></form></div>`;
+            cards += `<div class="card"><h3>Subject ID: <code>${val.userId}</code></h3><img src="/view-id/${val.filename}" style="width:100%; max-height:450px; object-fit:contain; border-radius:8px; border:2px solid var(--arcane-glow); margin:15px 0;"><form action="/decide" method="POST"><input type="hidden" name="token" value="${key}"><button name="choice" value="approve" class="btn btn-success">Verify</button> <button name="choice" value="deny" class="btn btn-danger">Reject</button></form></div>`;
         }
     });
-    res.send(`${CSS}<div class="container">${NAV('queue')}${cards || '<h3>Queue Clear</h3>'}</div>`);
+    res.send(`${CSS}<div class="container">${NAV('queue')}${cards || '<div class="card">The queue is silent.</div>'}</div>`);
 });
-
-// 2. USERS
-app.get('/admin-users', (req, res) => {
-    if (!req.session.authenticated) return res.redirect('/');
-    const v = getJSON(verifiedUsersFile);
-    let rows = v.map(id => {
-        const user = client.users.cache.get(id);
-        const tag = user ? `@${user.tag}` : 'Unknown';
-        return `<tr class="user-row" data-id="${id}" data-tag="${tag.toLowerCase()}"><td><code>${id}</code></td><td><strong>${tag}</strong></td><td><form action="/unverify" method="POST" style="margin:0;"><input type="hidden" name="userId" value="${id}"><label><input type="checkbox" name="ban" value="true"> Ban</label> <button class="btn btn-danger" style="padding:4px 8px; font-size:11px;">Revoke</button></form></td></tr>`;
-    }).join('');
-    res.send(`${CSS}<div class="container">${NAV('users')}
-        <div class="card" style="text-align:left; border-left:4px solid var(--success);"><h3>➕ Manual Whitelist</h3><form action="/manual-verify" method="POST" style="display:flex; gap:10px;"><input type="text" name="userId" placeholder="User ID..." required style="flex:1; background:#202225; color:#fff; border:1px solid #444; border-radius:4px; padding:10px;"><button class="btn btn-success">Verify</button></form></div>
-        <div class="card"><input type="text" id="s" placeholder="Search..." style="width:100%; padding:10px; margin-bottom:10px; background:#202225; color:#fff; border:none; border-radius:4px;"><table><thead><tr><th>ID</th><th>User</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table></div></div>
-        <script>document.getElementById('s').onkeyup=function(){let v=this.value.toLowerCase(); document.querySelectorAll('.user-row').forEach(r=>r.style.display=(r.dataset.id.includes(v)||r.dataset.tag.includes(v))?'':'none')}</script>`);
-});
-
-// 3. SERVERS (NETWORK MONITOR)
-app.get('/admin-servers', (req, res) => {
-    if (!req.session.authenticated) return res.redirect('/');
-    let cards = client.guilds.cache.map(guild => {
-        const s = getGuildSettings(guild.id);
-        const activeRole = s.roleId ? guild.roles.cache.get(s.roleId) : guild.roles.cache.find(r => r.name.toLowerCase() === "verified");
-        const vCount = guild.members.cache.filter(m => activeRole && m.roles.cache.has(activeRole.id)).size;
-        return `<div class="card" style="flex:1; min-width:300px; text-align:left;"><h2>${guild.name}</h2><p>ID: <code>${guild.id}</code></p><div style="background:#202225; padding:10px; border-radius:4px;"><strong>Role:</strong> ${activeRole?activeRole.name:'NOT CONFIGURED'}</div><p>Verified: <b>${vCount}</b> / Total: ${guild.memberCount}</p></div>`;
-    }).join('');
-    res.send(`${CSS}<div class="container">${NAV('servers')}<div style="display:flex; flex-wrap:wrap; gap:20px;">${cards}</div></div>`);
-});
-
-// 4. STATS
-app.get('/admin-stats', (req, res) => {
-    if (!req.session.authenticated) return res.redirect('/');
-    const stats = getJSON(statsFile, {});
-    let rows = Object.entries(stats).map(([id, d]) => {
-        const user = client.users.cache.get(id);
-        return `<tr><td>${user?`@${user.tag}`:id}</td><td>${d.approvals}</td><td>${d.denials}</td><td>${d.approvals+d.denials}</td></tr>`;
-    }).join('');
-    res.send(`${CSS}<div class="container">${NAV('stats')}<div class="card"><table><thead><tr><th>Staff</th><th>Approvals</th><th>Denials</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table></div></div>`);
-});
-
-// 5. APPEALS
-app.get('/admin-appeals', (req, res) => {
-    if (!req.session.authenticated) return res.redirect('/');
-    const appeals = getJSON(appealsFile, {});
-    let cards = Object.entries(appeals).map(([id, d]) => {
-        const user = client.users.cache.get(id);
-        return `<div class="card" style="text-align:left;"><h3>Appeal: ${user?`@${user.tag}`:id}</h3><p>${d.reason}</p><form action="/decide-appeal" method="POST" style="display:flex; gap:10px;"><input type="hidden" name="userId" value="${id}"><button name="choice" value="pardon" class="btn">Pardon</button><button name="choice" value="reject" class="btn btn-danger">Reject</button></form></div>`;
-    }).join('');
-    res.send(`${CSS}<div class="container">${NAV('appeals')}${cards || '<h3>No Appeals</h3>'}</div>`);
-});
-
-// --- CORE HANDLERS ---
 
 app.post('/decide', async (req, res) => {
     if (!req.session.authenticated) return res.redirect('/');
     const { token, choice } = req.body;
     const data = pendingVerifications.get(token);
     if (!data) return res.redirect('/admin-review');
-    try {
-        const guild = await client.guilds.fetch(data.guildId);
-        const member = await guild.members.fetch(data.userId).catch(() => null);
-        if (member) {
-            const s = getGuildSettings(data.guildId);
-            const role = s.roleId ? await guild.roles.fetch(s.roleId) : guild.roles.cache.find(r => r.name.toLowerCase() === "verified");
-            if (choice === 'approve' && role) {
-                await member.roles.add(role);
-                let v = getJSON(verifiedUsersFile); if (!v.includes(data.userId)) { v.push(data.userId); saveJSON(verifiedUsersFile, v); }
-                await member.send(`✅ Verified in **${guild.name}**.`).catch(() => null);
-            } else { await member.send(`❌ Verification denied in **${guild.name}**.`).catch(() => null); }
+    
+    const user = await client.users.fetch(data.userId).catch(() => null);
+
+    if (choice === 'approve') {
+        let v = getJSON(verifiedUsersFile);
+        if (!v.includes(data.userId)) { v.push(data.userId); saveJSON(verifiedUsersFile, v); }
+        const s = getJSON(settingsFile)[data.guildId] || {};
+        if (s.roleId) {
+            const guild = await client.guilds.fetch(data.guildId);
+            const member = await guild.members.fetch(data.userId).catch(() => null);
+            if (member) await member.roles.add(s.roleId).catch(() => null);
         }
-        await sendAuditLog(req.session.adminUser, data.userId, guild.name, choice);
-        recordStat(req.session.adminUser, choice);
-    } catch (e) {}
+        if (user) await user.send("✅ **The Council has approved your identity.** Passage is granted.").catch(() => null);
+    } else {
+        if (user) await user.send("❌ **The Council has rejected your identity.** Please ensure your credentials are clear and try again.").catch(() => null);
+    }
+
     if (data.filename) fs.unlinkSync(path.join(uploadDir, data.filename));
     pendingVerifications.delete(token);
+    recordStat(req.session.adminId, choice);
     res.redirect('/admin-review');
 });
 
-app.post('/manual-verify', async (req, res) => {
+app.get('/admin-users', (req, res) => {
     if (!req.session.authenticated) return res.redirect('/');
-    const { userId } = req.body;
-    let v = getJSON(verifiedUsersFile);
-    if (!v.includes(userId)) {
-        v.push(userId); saveJSON(verifiedUsersFile, v);
-        await sendAuditLog(req.session.adminUser, userId, "MANUAL_BYPASS", "approve");
-        client.guilds.cache.forEach(async (guild) => {
-            const m = await guild.members.fetch(userId).catch(() => null);
-            const s = getGuildSettings(guild.id);
-            const r = s.roleId ? await guild.roles.fetch(s.roleId) : guild.roles.cache.find(ro => ro.name.toLowerCase() === "verified");
-            if (m && r) await m.roles.add(r).catch(() => null);
-        });
-        const u = await client.users.fetch(userId).catch(() => null);
-        if (u) await u.send("✅ You have been manually whitelisted.").catch(() => null);
-    }
-    res.redirect('/admin-users');
+    const vList = getJSON(verifiedUsersFile);
+    const bList = getJSON(blacklistFile);
+    const vRows = vList.map(id => `<tr class="user-row" data-id="${id}"><td><code>${id}</code></td><td><form action="/unverify" method="POST"><input type="hidden" name="userId" value="${id}"><button class="btn btn-danger" style="padding:5px 10px;">Revoke & Strip</button></form></td></tr>`).join('');
+    const bRows = bList.map(id => `<tr class="user-row" data-id="${id}"><td><code>${id}</code></td><td><form action="/unblacklist" method="POST"><input type="hidden" name="userId" value="${id}"><button class="btn btn-success" style="padding:5px 10px;">Forgive</button></form></td></tr>`).join('');
+
+    res.send(`${CSS}<div class="container">${NAV('users')}
+        <div class="card"><h2>Live Search</h2><input type="text" id="searchInput" class="search-input" placeholder="User ID..." onkeyup="filterUsers()"></div>
+        <div class="card"><h2>Manual Action</h2><form action="/manual-action" method="POST" style="display:flex; gap:10px;"><input type="text" name="targetId" placeholder="User ID..." required style="flex:1;"><button name="action" value="verify" class="btn btn-success">Verify</button> <button name="action" value="blacklist" class="btn btn-danger">Exile</button></form></div>
+        <div class="card"><h2>Verified</h2><table><tbody id="vTable">${vRows || '<tr><td>None</td></tr>'}</tbody></table></div>
+        <div class="card"><h2>Blacklist</h2><table><tbody id="bTable">${bRows || '<tr><td>None</td></tr>'}</tbody></table></div>
+        <script>function filterUsers(){const q=document.getElementById('searchInput').value.toLowerCase(); document.querySelectorAll('.user-row').forEach(r=>r.style.display=r.dataset.id.includes(q)?'':'none');}</script>
+    </div>`);
 });
 
 app.post('/unverify', async (req, res) => {
     if (!req.session.authenticated) return res.redirect('/');
-    const { userId, ban } = req.body;
-    saveJSON(verifiedUsersFile, getJSON(verifiedUsersFile).filter(id => id !== userId));
-    if (ban === 'true') {
-        let b = getJSON(blacklistFile); if (!b.includes(userId)) { b.push(userId); saveJSON(blacklistFile, b); }
-        await sendAuditLog(req.session.adminUser, userId, "GLOBAL", "PERMANENT_BAN");
-    }
-    client.guilds.cache.forEach(async (guild) => {
-        const m = await guild.members.fetch(userId).catch(() => null);
-        const s = getGuildSettings(guild.id);
-        const r = s.roleId ? await guild.roles.fetch(s.roleId) : guild.roles.cache.find(ro => ro.name.toLowerCase() === "verified");
-        if (m && r) await m.roles.remove(r).catch(() => null);
-    });
+    saveJSON(verifiedUsersFile, getJSON(verifiedUsersFile).filter(id => id !== req.body.userId));
+    await revokeGlobalRoles(req.body.userId);
     res.redirect('/admin-users');
 });
 
-// --- DISCORD EVENTS ---
+app.post('/manual-action', async (req, res) => {
+    if (!req.session.authenticated) return res.redirect('/');
+    const { targetId, action } = req.body;
+    if (action === 'verify') {
+        let v = getJSON(verifiedUsersFile);
+        if (!v.includes(targetId)) { v.push(targetId); saveJSON(verifiedUsersFile, v); }
+    } else {
+        let b = getJSON(blacklistFile);
+        if (!b.includes(targetId)) { b.push(targetId); saveJSON(blacklistFile, b); }
+        saveJSON(verifiedUsersFile, getJSON(verifiedUsersFile).filter(id => id !== targetId));
+        await revokeGlobalRoles(targetId);
+    }
+    res.redirect('/admin-users');
+});
+
+app.get('/admin-servers', (req, res) => {
+    if (!req.session.authenticated) return res.redirect('/');
+    let cards = client.guilds.cache.map(g => {
+        const s = getJSON(settingsFile)[g.id] || {};
+        const role = s.roleId ? g.roles.cache.get(s.roleId) : null;
+        return `<div class="card"><h3>${g.name}</h3><p>Role: <b style="color:var(--elven-gold)">${role ? role.name : 'Unset'}</b></p></div>`;
+    }).join('');
+    res.send(`${CSS}<div class="container">${NAV('servers')}${cards}</div>`);
+});
+
+app.get('/admin-stats', (req, res) => {
+    if (!req.session.authenticated) return res.redirect('/');
+    const stats = getJSON(statsFile, {});
+    let rows = Object.entries(stats).map(([id, d]) => `<tr><td><code>${id}</code></td><td>${d.approvals}</td><td>${d.denials}</td></tr>`).join('');
+    res.send(`${CSS}<div class="container">${NAV('stats')}<div class="card"><table><thead><tr><th>Admin</th><th>Approve</th><th>Deny</th></tr></thead><tbody>${rows}</tbody></table></div></div>`);
+});
+
+// --- DISCORD COMMANDS ---
 client.on('ready', async () => {
     const cmds = [
-        new SlashCommandBuilder().setName('verify').setDescription('Verify your ID.'),
-        new SlashCommandBuilder().setName('setrole').setDescription('Set verified role.').addRoleOption(o => o.setName('role').setDescription('Role').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+        new SlashCommandBuilder().setName('verify').setDescription('Begin your verification process.'),
+        new SlashCommandBuilder().setName('setrole').setDescription('Configure the verified role.').addRoleOption(o => o.setName('role').setDescription('The role').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
     ];
     await new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN).put(Routes.applicationCommands(process.env.CLIENT_ID), { body: cmds });
 });
@@ -266,31 +233,38 @@ client.on('interactionCreate', async (i) => {
     if (!i.isChatInputCommand()) return;
     if (i.commandName === 'setrole') {
         let s = getJSON(settingsFile, {}); s[i.guildId] = { roleId: i.options.getRole('role').id }; saveJSON(settingsFile, s);
-        return i.reply({ content: 'Role set.', ephemeral: true });
+        i.reply({ content: '✅ Role updated.', ephemeral: true });
     }
     if (i.commandName === 'verify') {
-        if (isBlacklisted(i.user.id)) {
-            const t = uuidv4(); pendingVerifications.set(t, { userId: i.user.id, status: 'awaiting_appeal', timestamp: Date.now() });
-            return i.reply({ content: `❌ Banned. Appeal: ${process.env.BASE_URL}/appeal/${t}`, ephemeral: true });
-        }
+        if (isBlacklisted(i.user.id)) return i.reply({ content: '❌ You are exiled.', ephemeral: true });
         if (isGloballyVerified(i.user.id)) {
-            const s = getGuildSettings(i.guildId);
-            const r = s.roleId ? await i.guild.roles.fetch(s.roleId) : i.guild.roles.cache.find(ro => ro.name.toLowerCase() === "verified");
-            if (r) { await i.member.roles.add(r); return i.reply({ content: '✅ Re-synced!', ephemeral: true }); }
+            const s = getJSON(settingsFile)[i.guildId] || {};
+            if (s.roleId) await i.member.roles.add(s.roleId).catch(() => null);
+            return i.reply({ content: '✅ Already verified.', ephemeral: true });
         }
-        const t = uuidv4(); pendingVerifications.set(t, { userId: i.user.id, guildId: i.guildId, status: 'awaiting_upload', timestamp: Date.now() });
-        await i.reply({ content: 'Check DMs.', ephemeral: true });
-        try { await i.user.send(`🛡️ Verify: ${process.env.BASE_URL}/verify/${t}`); } catch { await i.followUp({ content: 'Enable DMs.', ephemeral: true }); }
+        const t = uuidv4();
+        pendingVerifications.set(t, { userId: i.user.id, guildId: i.guildId, status: 'awaiting_upload' });
+        const dm = await i.user.send(`🛡️ **Identity Portal**: ${process.env.BASE_URL}/verify/${t}`).catch(() => null);
+        i.reply({ content: dm ? 'Check DMs.' : '❌ Enable DMs.', ephemeral: true });
     }
 });
 
-// --- BOOT ---
+// --- PUBLIC ROUTES ---
+app.get('/verify/:token', (req, res) => {
+    const d = pendingVerifications.get(req.params.token);
+    if (!d || isBlacklisted(d.userId)) return res.send("Link invalid.");
+    res.send(`${CSS}<div class="card" style="text-align:center;"><h2>Upload Credentials</h2><form action="/upload" method="POST" enctype="multipart/form-data"><input type="hidden" name="token" value="${req.params.token}"><input type="file" name="idImage" required><br><br><button class="btn">Submit</button></form></div>`);
+});
+
+app.post('/upload', upload.single('idImage'), (req, res) => {
+    const d = pendingVerifications.get(req.body.token);
+    if (!d) return res.send("Expired.");
+    d.filename = req.file.filename; d.status = 'pending_review';
+    res.send("Received. The Council is deliberating.");
+});
+
 app.get('/view-id/:f', (req, res) => { if (req.session.authenticated) res.sendFile(path.join(uploadDir, req.params.f)); });
 app.get('/logout', (req, res) => { req.session.destroy(); res.redirect('/'); });
-app.get('/verify/:token', (req, res) => { res.send(`${CSS}<div class="card"><form action="/upload" method="POST" enctype="multipart/form-data"><input type="hidden" name="token" value="${req.params.token}"><input type="file" name="idImage" required><button class="btn">Upload</button></form></div>`); });
-app.post('/upload', upload.single('idImage'), (req, res) => { const d = pendingVerifications.get(req.body.token); d.filename = req.file.filename; d.status = 'pending_review'; res.send("Reviewing..."); });
-app.get('/appeal/:t', (req, res) => { res.send(`${CSS}<form action="/submit-appeal" method="POST"><input type="hidden" name="token" value="${req.params.t}"><textarea name="reason" placeholder="Reason..."></textarea><button class="btn">Submit</button></form>`); });
-app.post('/submit-appeal', (req, res) => { const d = pendingVerifications.get(req.body.token); let a = getJSON(appealsFile, {}); a[d.userId] = { reason: req.body.reason }; saveJSON(appealsFile, a); res.send("Sent."); });
 
-app.listen(process.env.PORT, () => console.log("System Online."));
+app.listen(process.env.PORT || 3000);
 client.login(process.env.DISCORD_TOKEN);
