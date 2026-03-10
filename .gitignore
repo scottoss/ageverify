@@ -1,4 +1,8 @@
 .env
 /node_modules/
 /uploads/
-*.json
+verifiedUsers.json
+stats.json
+guildSettings.json
+blacklist.json
+appeals.json
