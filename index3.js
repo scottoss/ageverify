@@ -333,7 +333,8 @@ client.on('interactionCreate', async (i) => {
         if (isGloballyVerified(i.user.id)) {
             const s = getGuildSettings(i.guildId);
             const r = s.roleId ? await i.guild.roles.fetch(s.roleId) : i.guild.roles.cache.find(ro => ro.name.toLowerCase() === "verified");
-            if (r) { await i.member.roles.add(r); return i.reply({ content: '✅ Your past credentials are recognized. Passage granted.', ephemeral: true }); }
+            if (r) { await i.member.roles.add(r); return i.reply({ content: '✅ Your past credentials are recognized. Passage granted.', ephemeral: true }); } else { return i.reply({ content: '✅ Your past credentials are recognized. || ❌ Error: This server has no set verified role, please notify a server admin to fix this using the /setrole command.', ephemeral: true });
+			}
         }
         const t = uuidv4(); pendingVerifications.set(t, { userId: i.user.id, guildId: i.guildId, status: 'awaiting_upload', timestamp: Date.now() });
         await i.reply({ content: 'Look to your direct messages for the portal link.', ephemeral: true });
