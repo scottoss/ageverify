@@ -229,11 +229,11 @@ app.post('/decide', async (req, res) => {
         if (member) {
             const s = getGuildSettings(data.guildId);
             const role = s.roleId ? await guild.roles.fetch(s.roleId) : guild.roles.cache.find(r => r.name.toLowerCase() === "verified");
-            if (choice === 'approve' && role) {
-                await member.roles.add(role);
+            if (choice === 'approve') {
                 let v = getJSON(verifiedUsersFile); if (!v.includes(data.userId)) { v.push(data.userId); saveJSON(verifiedUsersFile, v); }
-                await member.send(`✅ You have been verified and granted passage into **${guild.name}**.`).catch(() => null);
-            } else { await member.send(`❌ Your verification for **${guild.name}** was rejected by the council.`).catch(() => null); }
+                await member.send(`✅ You have been verified and granted passage.`).catch(() => null);
+				await member.roles.add(role);
+            } else { await member.send(`❌ Your verification was rejected by the council.`).catch(() => null); }
         }
         await sendAuditLog(req.session.adminUser, data.userId, guild.name, choice);
         recordStat(req.session.adminUser, choice);
