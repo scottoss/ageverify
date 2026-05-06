@@ -10,6 +10,9 @@ Privacy-First Architecture: * IDs are immediately deleted from the server once a
 Uses unique, non-guessable tokens for every verification session.
 
 
+get BeSafe api token here: https://www.besafesondiscord.com/
+
+
 # 🏗️ Technical Stack
 Runtime: Node.js (v18+)
 
