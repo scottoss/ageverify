@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, PermissionFlagsBits, Partials } = require('discord.js');
 const express = require('express');
 const session = require('express-session');
 const multer = require('multer');
@@ -10,68 +10,62 @@ const { v4: uuidv4 } = require('uuid');
 
 // --- DATABASE & FILE SETUP ---
 const uploadDir = path.join(__dirname, 'uploads');
-const statsFile = path.join(__dirname, 'stats.json');
 const settingsFile = path.join(__dirname, 'guildSettings.json');
+const verifiedUsersFile = path.join(__dirname, 'verifiedUsers.json');
+const blacklistFile = path.join(__dirname, 'blacklist.json');
+
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 const app = express();
 const upload = multer({ dest: 'uploads/' });
-const pendingVerifications = new Map();
+const pendingVerifications = new Map(); 
 
 const client = new Client({ 
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.DirectMessages] 
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.DirectMessages],
+    partials: [Partials.Channel, Partials.User, Partials.GuildMember]
 });
 
-// --- MODERN CSS ---
+// --- MODERN FANTASY UI ENGINE ---
 const CSS = `<style>
-    :root { --blurple: #5865F2; --bg-dark: #36393f; --bg-card: #2f3136; --text: #ffffff; --muted: #b9bbbe; --danger: #ed4245; --success: #3ba55c; }
-    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background: var(--bg-dark); color: var(--text); margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }
-    .container { width: 100%; max-width: 800px; }
-    .card { background: var(--bg-card); padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); text-align: center; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.05); }
-    .btn { background: var(--blurple); color: white; border: none; padding: 12px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; transition: 0.2s; }
-    .btn:hover { background: #4752C4; }
-    .btn-danger { background: var(--danger); }
-    .nav { margin-bottom: 20px; display: flex; gap: 15px; justify-content: center; }
-    .nav a { color: var(--muted); text-decoration: none; font-weight: bold; }
-    .nav a.active { color: var(--text); border-bottom: 2px solid var(--blurple); }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; background: #202225; border-radius: 8px; overflow: hidden; }
-    th, td { padding: 15px; text-align: left; border-bottom: 1px solid #40444B; }
-    .badge { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
-    .badge-success { background: var(--success); }
-    .badge-danger { background: var(--danger); }
-    .preview-img { width: 100%; border-radius: 4px; margin: 15px 0; border: 2px solid #000; }
-    .tos-box { background: #202225; padding: 15px; border-radius: 6px; text-align: left; font-size: 13px; margin-bottom: 15px; border-left: 4px solid var(--blurple); }
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Inter:wght@300;400;600&display=swap');
+    :root { 
+        --obsidian-bg: #0f1115; --parchment-text: #e2e8f0; --arcane-glow: #8b5cf6; 
+        --elven-gold: #fbbf24; --void-surface: rgba(30, 32, 40, 0.7); 
+        --danger: #ef4444; --success: #10b981; --font-heading: 'Cinzel', serif; 
+        --font-body: 'Inter', sans-serif;
+    }
+    body { font-family: var(--font-body); background-color: var(--obsidian-bg); color: var(--parchment-text); margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }
+    .container { width: 100%; max-width: 600px; position: relative; }
+    .card { background: var(--void-surface); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 12px; padding: 25px; margin-bottom: 20px; backdrop-filter: blur(10px); box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+    .btn { background: linear-gradient(135deg, #6d28d9 0%, #4c1d95 100%); color: white; padding: 12px 24px; border-radius: 6px; cursor: pointer; text-decoration: none; font-family: var(--font-heading); border:none; transition: 0.3s; width: 100%; font-size: 1rem; }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 0 15px var(--arcane-glow); }
+    .nav { margin-bottom: 30px; display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; }
+    .nav a { color: var(--parchment-text); text-decoration: none; font-family: var(--font-heading); padding: 5px 10px; font-size: 0.9rem; }
+    .nav a.active { color: var(--elven-gold); border-bottom: 2px solid var(--elven-gold); }
+    input[type="text"], input[type="date"] { background: rgba(0,0,0,0.5); border: 1px solid var(--arcane-glow); color: white; padding: 10px; border-radius: 4px; width: 100%; box-sizing: border-box; margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; font-family: var(--font-heading); color: var(--elven-gold); font-size: 0.8rem; }
+    
+    /* LOADINGRitual OVERLAY */
+    #ritual-overlay { position: fixed; inset: 0; background: rgba(15, 17, 21, 0.9); backdrop-filter: blur(15px); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; text-align: center; }
+    .spinner { width: 60px; height: 60px; border: 4px solid rgba(139, 92, 246, 0.1); border-top: 4px solid var(--elven-gold); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; box-shadow: 0 0 20px var(--arcane-glow); }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .ritual-text { font-family: var(--font-heading); color: var(--elven-gold); font-size: 1.2rem; letter-spacing: 2px; }
 </style>`;
 
-// --- DATABASE HELPERS ---
-function getGuildSettings(guildId) {
-    if (!fs.existsSync(settingsFile)) return {};
-    return JSON.parse(fs.readFileSync(settingsFile))[guildId] || {};
-}
-function saveGuildSetting(guildId, roleId) {
-    let s = fs.existsSync(settingsFile) ? JSON.parse(fs.readFileSync(settingsFile)) : {};
-    s[guildId] = { roleId };
-    fs.writeFileSync(settingsFile, JSON.stringify(s, null, 2));
-}
-function recordStat(adminId, action) {
-    let s = fs.existsSync(statsFile) ? JSON.parse(fs.readFileSync(statsFile)) : {};
-    if (!s[adminId]) s[adminId] = { approvals: 0, denials: 0 };
-    action === 'approve' ? s[adminId].approvals++ : s[adminId].denials++;
-    fs.writeFileSync(statsFile, JSON.stringify(s, null, 2));
-}
+// --- DATA HELPERS ---
+const getJSON = (file, def = []) => fs.existsSync(file) ? JSON.parse(fs.readFileSync(file)) : def;
+const saveJSON = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2));
 
+[settingsFile, verifiedUsersFile, blacklistFile].forEach(f => { if (!fs.existsSync(f)) saveJSON(f, f.endsWith('s.json') ? {} : []); });
+
+const isGloballyVerified = (id) => getJSON(verifiedUsersFile).includes(id);
+const isBlacklisted = (id) => getJSON(blacklistFile).includes(id);
+
+// --- EXPRESS SETUP ---
 app.use(express.urlencoded({ extended: true }));
-app.use(session({
-    secret: process.env.SESSION_SECRET,
-    resave: false, saveUninitialized: false,
-    cookie: { secure: false } 
-}));
+app.use(session({ secret: 'mystic_portal_secret', resave: false, saveUninitialized: false }));
 
-// --- OAUTH2 & PUBLIC ROUTES ---
-
-app.get('/', (req, res) => {
-    res.send(`${CSS}<div class="container"><div class="card"><h1>🛡️ Verification Hub</h1><p>Secure Staff Management Portal</p><br><a href="/auth/discord" class="btn">Login with Discord</a></div></div>`);
-});
+app.get('/', (req, res) => res.send(`${CSS}<div class="card"><h1>🛡️ Portal Entrance</h1><a href="/auth/discord" class="btn">Authenticate Admin</a></div>`));
 
 app.get('/auth/discord', (req, res) => {
     const url = `https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}&response_type=code&scope=identify%20guilds.members.read`;
@@ -79,144 +73,142 @@ app.get('/auth/discord', (req, res) => {
 });
 
 app.get('/auth/callback', async (req, res) => {
-    const code = req.query.code;
-    if (!code) return res.redirect('/');
     try {
         const tokenResp = await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({
             client_id: process.env.CLIENT_ID, client_secret: process.env.CLIENT_SECRET,
-            code, grant_type: 'authorization_code', redirect_uri: process.env.REDIRECT_URI
-        }), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-
-        const userResp = await axios.get('https://discord.com/api/users/@me', {
-            headers: { Authorization: `Bearer ${tokenResp.data.access_token}` }
-        });
-
+            code: req.query.code, grant_type: 'authorization_code', redirect_uri: process.env.REDIRECT_URI
+        }));
+        const userResp = await axios.get('https://discord.com/api/users/@me', { headers: { Authorization: `Bearer ${tokenResp.data.access_token}` } });
         const staffGuild = await client.guilds.fetch(process.env.STAFF_GUILD_ID);
         const member = await staffGuild.members.fetch(userResp.data.id);
-
         if (member.roles.cache.has(process.env.STAFF_ROLE_ID)) {
             req.session.authenticated = true;
-            req.session.adminUser = userResp.data.id;
-            return res.redirect('/admin-review');
+            return res.redirect('/admin-users');
         }
-        res.send("Access Denied: Required Staff Role missing.");
-    } catch (e) { res.send("Auth Failed: " + e.message); }
+        res.send("Access Denied.");
+    } catch (e) { res.send(`Auth Error: ${e.message}`); }
 });
 
-// --- USER UPLOAD ROUTES ---
+// --- ADMIN PAGES ---
+app.get('/admin-users', (req, res) => {
+    if (!req.session.authenticated) return res.redirect('/');
+    const vList = getJSON(verifiedUsersFile);
+    const rows = vList.map(id => `<tr><td><code>${id}</code></td><td><form action="/unverify" method="POST"><input type="hidden" name="userId" value="${id}"><button class="btn" style="background:var(--danger); padding:5px 10px;">Revoke</button></form></td></tr>`).join('');
+    res.send(`${CSS}<div class="container"><div class="card"><h2>Manual Registry</h2><form action="/manual-verify" method="POST" style="display:flex; gap:10px;"><input type="text" name="targetId" placeholder="User ID" required><button class="btn" style="width:auto;">Verify</button></form></div><div class="card"><table><tbody>${rows || '<tr><td>None</td></tr>'}</tbody></table></div></div>`);
+});
 
+app.post('/manual-verify', (req, res) => {
+    if (!req.session.authenticated) return res.redirect('/');
+    let v = getJSON(verifiedUsersFile);
+    if (!v.includes(req.body.targetId)) { v.push(req.body.targetId); saveJSON(verifiedUsersFile, v); }
+    res.redirect('/admin-users');
+});
+
+// --- USER FACING PORTAL (WITH LOADING Ritual) ---
 app.get('/verify/:token', (req, res) => {
-    const data = pendingVerifications.get(req.params.token);
-    if (!data) return res.send(`${CSS}<div class="container"><div class="card"><h2>Link Expired</h2><p>Please run /verify again.</p></div></div>`);
-    res.send(`${CSS}<div class="container"><div class="card"><h2>ID Verification</h2><p>Please upload a clear photo of your ID.</p><form action="/upload" method="POST" enctype="multipart/form-data"><input type="hidden" name="token" value="${req.params.token}"><input type="file" name="idImage" accept="image/*" required><div class="tos-box"><strong>🔒 Privacy Notice</strong><br>Your ID is deleted immediately after review. Only staff see this submission.</div><div style="margin-bottom:15px;"><input type="checkbox" id="tos" required> <label for="tos">I agree to the Terms of Service.</label></div><button class="btn" style="width:100%">Submit for Review</button></form></div></div>`);
+    const d = pendingVerifications.get(req.params.token);
+    if (!d || isBlacklisted(d.userId)) return res.send("Link invalid or expired.");
+    res.send(`${CSS}
+    <div id="ritual-overlay">
+        <div class="spinner"></div>
+        <div class="ritual-text">COMMUNING WITH BESAFE ARCHIVES...</div>
+        <p style="color:var(--parchment-text); opacity:0.6; margin-top:10px;">Encoding credentials for transmission</p>
+    </div>
+    <div class="container" style="margin-top:50px;">
+        <div class="card">
+            <h2>Identity Ritual</h2>
+            <form id="verifyForm" action="/upload" method="POST" enctype="multipart/form-data">
+                <input type="hidden" name="token" value="${req.params.token}">
+                
+                <label>Date of Birth</label>
+                <input type="date" name="dob" required>
+                
+                <label>ID Photo</label>
+                <input type="file" name="idPhoto" accept="image/*" required style="margin-bottom:15px;">
+                
+                <label>Face Photo (Selfie)</label>
+                <input type="file" name="facePhoto" accept="image/*" required style="margin-bottom:20px;">
+                
+                <button type="submit" class="btn">Submit to BeSafe</button>
+            </form>
+        </div>
+    </div>
+    <script>
+        document.getElementById('verifyForm').onsubmit = function() {
+            document.getElementById('ritual-overlay').style.display = 'flex';
+        };
+    </script>`);
 });
 
-app.post('/upload', upload.single('idImage'), async (req, res) => {
-    const data = pendingVerifications.get(req.body.token);
-    if (!data || !req.file) return res.status(400).send("Upload Failed.");
-    data.filename = req.file.filename;
-    data.status = 'pending_review';
+app.post('/upload', upload.fields([{ name: 'idPhoto', maxCount: 1 }, { name: 'facePhoto', maxCount: 1 }]), async (req, res) => {
+    const d = pendingVerifications.get(req.body.token);
+    if (!d) return res.send("Session Expired.");
 
     try {
-        const log = await client.channels.fetch(process.env.STAFF_LOG_CHANNEL_ID);
-        await log.send({ embeds: [new EmbedBuilder().setTitle('📸 ID Uploaded').setColor(0x5865F2).setDescription(`User <@${data.userId}> has submitted an ID for review.`).setTimestamp()] });
-    } catch(e) {}
-    res.send(`${CSS}<div class="container"><div class="card"><h2>Success!</h2><p>Your ID has been submitted. Staff will review it shortly.</p></div></div>`);
+        const idBase64 = `data:${req.files['idPhoto'][0].mimetype};base64,${fs.readFileSync(req.files['idPhoto'][0].path).toString('base64')}`;
+        const faceBase64 = `data:${req.files['facePhoto'][0].mimetype};base64,${fs.readFileSync(req.files['facePhoto'][0].path).toString('base64')}`;
+
+        await axios.post('https://besafesondiscord.com/api/v1/private/verify', {
+            userId: d.userId,
+            idPhoto: idBase64,
+            facePhoto: faceBase64,
+            dob: req.body.dob
+        }, {
+            headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.BESAFE_API_KEY }
+        });
+
+        fs.unlinkSync(req.files['idPhoto'][0].path);
+        fs.unlinkSync(req.files['facePhoto'][0].path);
+        pendingVerifications.delete(req.body.token);
+        res.send(`${CSS}<div class="card"><h2>Transmission Successful</h2><p>Your details are being reviewed by BeSafe. Use <code>/verify</code> in Discord again shortly.</p></div>`);
+    } catch (e) {
+        res.send(`${CSS}<div class="card"><h2>Mystic Interference</h2><p>Error: ${e.message}</p><a href="javascript:history.back()" class="btn">Try Again</a></div>`);
+    }
 });
 
-// --- ADMIN DASHBOARD ---
-
-app.get('/admin-review', (req, res) => {
-    if (!req.session.authenticated) return res.redirect('/');
-    let cards = '';
-    pendingVerifications.forEach((val, key) => {
-        if (val.status === 'pending_review') {
-            const guild = client.guilds.cache.get(val.guildId);
-            cards += `<div class="card" style="text-align:left;"><h3>${guild?.name || 'Server'}</h3><p>User: <@${val.userId}></p><img src="/view-id/${val.filename}" class="preview-img"><form action="/decide" method="POST" style="display:flex; gap:10px;"><input type="hidden" name="token" value="${key}"><button name="choice" value="approve" class="btn" style="flex:1">Approve</button><button name="choice" value="deny" class="btn btn-danger" style="flex:1">Deny</button></form></div>`;
-        }
-    });
-    res.send(`${CSS}<div class="container"><div class="nav"><a href="/admin-review" class="active">Queue</a><a href="/admin-servers">Servers</a><a href="/admin-stats">Stats</a><a href="/logout">Logout</a></div>${cards || '<div class="card"><h3>Queue Clear</h3></div>'}</div>`);
-});
-
-app.use('/view-id', (req, res, next) => {
-    if (!req.session.authenticated) return res.status(403).send("Forbidden");
-    next();
-}, express.static(uploadDir));
-
-app.post('/decide', async (req, res) => {
-    if (!req.session.authenticated) return res.redirect('/');
-    const { token, choice } = req.body;
-    const data = pendingVerifications.get(token);
-    if (!data) return res.redirect('/admin-review');
-
-    try {
-        const guild = await client.guilds.fetch(data.guildId);
-        const member = await guild.members.fetch(data.userId);
-        const settings = getGuildSettings(data.guildId);
-        const role = settings.roleId ? await guild.roles.fetch(settings.roleId) : guild.roles.cache.find(r => r.name.toLowerCase() === "verified");
-
-        if (choice === 'approve' && role) {
-            await member.roles.add(role);
-            await member.send(`✅ Verification approved in **${guild.name}**!`);
-        } else {
-            await member.send(`❌ Verification denied in **${guild.name}**.`);
-        }
-        recordStat(req.session.adminUser, choice);
-    } catch (e) { console.error(e); }
-
-    if (data.filename) fs.unlinkSync(path.join(uploadDir, data.filename));
-    pendingVerifications.delete(token);
-    res.redirect('/admin-review');
-});
-
-app.get('/admin-servers', (req, res) => {
-    if (!req.session.authenticated) return res.redirect('/');
-    let rows = '';
-    client.guilds.cache.forEach(g => {
-        const s = getGuildSettings(g.id);
-        const role = s.roleId ? `<span class="badge badge-success">Custom</span>` : (g.roles.cache.find(r => r.name.toLowerCase() === "verified") ? `<span class="badge" style="background:#4f545c">Default</span>` : `<span class="badge badge-danger">Missing</span>`);
-        rows += `<tr><td>${g.name}</td><td>${role}</td><td>${g.memberCount}</td></tr>`;
-    });
-    res.send(`${CSS}<div class="container"><div class="nav"><a href="/admin-review">Queue</a><a href="/admin-servers" class="active">Servers</a><a href="/admin-stats">Stats</a><a href="/logout">Logout</a></div><div class="card"><table><thead><tr><th>Server</th><th>Role Status</th><th>Members</th></tr></thead><tbody>${rows}</tbody></table></div></div>`);
-});
-
-app.get('/admin-stats', (req, res) => {
-    if (!req.session.authenticated) return res.redirect('/');
-    const stats = fs.existsSync(statsFile) ? JSON.parse(fs.readFileSync(statsFile)) : {};
-    let rows = '';
-    Object.entries(stats).forEach(([id, s]) => { rows += `<tr><td><@${id}></td><td>${s.approvals}</td><td>${s.denials}</td></tr>`; });
-    res.send(`${CSS}<div class="container"><div class="nav"><a href="/admin-review">Queue</a><a href="/admin-servers">Servers</a><a href="/admin-stats" class="active">Stats</a><a href="/logout">Logout</a></div><div class="card"><table><tr><th>Staff</th><th>✅ OK</th><th>❌ NO</th></tr>${rows}</table></div></div>`);
-});
-
-app.get('/logout', (req, res) => { req.session.destroy(); res.redirect('/'); });
-
-// --- DISCORD COMMANDS ---
+// --- DISCORD LOGIC ---
 client.on('ready', async () => {
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-    const commands = [
+    const cmds = [
         new SlashCommandBuilder().setName('verify').setDescription('Start your verification.'),
-        new SlashCommandBuilder().setName('setrole').setDescription('Set target role.').addRoleOption(o => o.setName('role').setDescription('Role').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
-    ].map(c => c.toJSON());
-    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
+        new SlashCommandBuilder().setName('setrole').setDescription('Configure the verified role.')
+            .addRoleOption(o => o.setName('role').setDescription('Role').setRequired(true))
+            .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+    ];
+    await new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN).put(Routes.applicationCommands(process.env.CLIENT_ID), { body: cmds });
 });
 
 client.on('interactionCreate', async (i) => {
     if (!i.isChatInputCommand()) return;
+    const userId = i.user.id;
     if (i.commandName === 'setrole') {
-        saveGuildSetting(i.guildId, i.options.getRole('role').id);
-        return i.reply({ content: '✅ Role updated!', ephemeral: true });
+        let s = getJSON(settingsFile, {}); s[i.guildId] = { roleId: i.options.getRole('role').id }; saveJSON(settingsFile, s);
+        return i.reply({ content: '✅ Role configured.', ephemeral: true });
     }
     if (i.commandName === 'verify') {
-        const token = uuidv4();
-        pendingVerifications.set(token, { userId: i.user.id, guildId: i.guildId, status: 'awaiting_upload', timestamp: Date.now() });
-        await i.reply({ content: 'Check DMs!', ephemeral: true });
-        try { 
-            await i.user.send(`🛡️ Verify for **${i.guild.name}**: ${process.env.BASE_URL}/verify/${token}`); 
-            const log = await client.channels.fetch(process.env.STAFF_LOG_CHANNEL_ID);
-            await log.send({ embeds: [new EmbedBuilder().setTitle('📥 Verification Started').setDescription(`User <@${i.user.id}> started verification.`).setTimestamp()] });
-        } catch (e) { await i.followUp({ content: 'Open DMs!', ephemeral: true }); }
+        if (isBlacklisted(userId)) return i.reply({ content: '❌ Exiled.', ephemeral: true });
+        
+        try {
+            const apiResp = await axios.get(`https://besafesondiscord.com/api/v1/public/user/${userId}`).catch(() => null);
+            if (apiResp && apiResp.data.age?.isVerified && apiResp.data.age?.isAdult) {
+                if (!isGloballyVerified(userId)) {
+                    let v = getJSON(verifiedUsersFile); v.push(userId); saveJSON(verifiedUsersFile, v);
+                }
+            }
+        } catch (e) {}
+
+        if (isGloballyVerified(userId)) {
+            const s = getJSON(settingsFile)[i.guildId] || {};
+            if (s.roleId) await i.member.roles.add(s.roleId).catch(() => null);
+            return i.reply({ content: '✅ Passage granted.', ephemeral: true });
+        }
+
+        const t = uuidv4();
+        pendingVerifications.set(t, { userId, guildId: i.guildId });
+        await i.user.send(`🛡️ **BeSafe Verification**: ${process.env.BASE_URL}/verify/${t}`).catch(() => null);
+        i.reply({ content: 'Check your DMs.', ephemeral: true });
     }
 });
 
-app.listen(process.env.PORT, () => console.log(`Portal online at ${process.env.BASE_URL}`));
+app.get('/logout', (req, res) => { req.session.destroy(); res.redirect('/'); });
+app.listen(process.env.PORT || 3000, () => console.log("BeSafe Ritual Gateway Online."));
 client.login(process.env.DISCORD_TOKEN);

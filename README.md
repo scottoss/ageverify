@@ -1,18 +1,14 @@
-# 🛡️ Discord Age Verification System By Fnaf_Rainbow And CreatorPlaza
+# 🛡️ Discord Age Verification System By Fnaf_Rainbow And CreatorPlaza and BeSafe
 A secure, privacy-first age verification solution combining a Discord Bot and a Web Portal. This system allows server administrators to verify user ages via manual ID review without permanently storing sensitive government documents.
 
 # ✨ Features
 Slash Command Integration: Users initiate verification easily with /verify.
 
-Secure Web Portal: A modern, dark-themed UI for ID uploads, styled after the Discord aesthetic.
-
-Admin Dashboard: A password-protected interface for staff to review, approve, or deny submissions.
 
 Privacy-First Architecture: * IDs are immediately deleted from the server once a decision is made.
 
 Uses unique, non-guessable tokens for every verification session.
 
-Automated Role Management: Automatically grants the "Verified" role upon approval and notifies the user via DM.
 
 # 🏗️ Technical Stack
 Runtime: Node.js (v18+)
